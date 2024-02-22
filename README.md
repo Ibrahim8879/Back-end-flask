@@ -9,3 +9,9 @@ python -m venv venv
 pip install -r ./pip/requirements.txt
 # To run
 python ./api/app.py
+
+
+
+scheduler.add_job(job, 'cron', hour=14)
+
+#hour=14 means" 2 PM "
