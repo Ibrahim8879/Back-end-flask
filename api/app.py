@@ -9,8 +9,8 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///twitter.db'
 app.config['SQLALCHEMY_DATABASE_URI'] =\
         'sqlite:///' + basedir
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
-
 db = SQLAlchemy(app)
+
 class TweetsAttribute(db.Model):
     __tablename__ = 'tweets_attribute'
     id = db.Column(db.Integer, primary_key=True)
