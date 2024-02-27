@@ -1,10 +1,13 @@
 from flask import Flask, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_apscheduler import APScheduler
-from schedular_db_push import collect_data_job
 import os
 import csv
+import pandas as pd
 import subprocess
+from features.schedular_db_push import collect_data_job
+from features.trends import get_trends
+from features.word_freq import analyze_word_frequency, analyze_abusive_language, get_all_languages
 
 app = Flask(__name__)
 scheduler = APScheduler()
@@ -56,6 +59,21 @@ def job():
         with open(file_path2, 'r', encoding='utf-8') as file:
             line_count = sum(1 for line in file)
             if line_count > 2:
+                print("pushing data in db.")
+                with open(datacoll+'\\api\data_collection\\tweets.csv', 'r', encoding='utf-8') as file:
+                    reader = csv.DictReader(file)
+                    for row in reader:
+                        tweet = Tweets(
+                            date=row['Date'],
+                            country=row['Country'],
+                            trend=row['Trend'],
+                            username=row['Username'],
+                            tweet=row['Tweet'],
+                            language=row['Language'],
+                            tweet_time=row['Tweet_Time']
+                        )
+                        db.session.add(tweet)
+                db.session.commit()
                 with open(datacoll+'\\api\\data_collection\\ProfileData.csv', 'r', encoding='utf-8') as file:
                     reader = csv.DictReader(file)
                     for row in reader:
@@ -72,19 +90,6 @@ def job():
                             date_joined=row['Date Joined']
                         )
                         db.session.add(profile_data)
-                with open(datacoll+'\\api\data_collection\\tweets.csv', 'r', encoding='utf-8') as file:
-                    reader = csv.DictReader(file)
-                    for row in reader:
-                        tweet = Tweets(
-                            date=row['Date'],
-                            country=row['Country'],
-                            trend=row['Trend'],
-                            username=row['Username'],
-                            tweet=row['Tweet'],
-                            language=row['Language'],
-                            tweet_time=row['Tweet_Time']
-                        )
-                        db.session.add(tweet)
                 db.session.commit()
                 print("Data pushed to database.")
             else:
@@ -104,18 +109,35 @@ def job():
 
 # Schedule the job to run every 12 hours
 scheduler.add_job(id='collect_data_job', func=job, trigger='interval', seconds=15)
-
-
+# Error handlers
 @app.errorhandler(404)
 def page_not_found(error):
     return 'This page does not exist', 404
 
+# Routes
 @app.route('/', methods=['GET'])
 def home():
     return """<h1>Distant Reading Archive</h1>
     <p>A prototype API for distant reading of science fiction novels</p>
     """
-    
+
+@app.route('/trends', methods=['GET'])
+def trends():
+    return get_trends(db, ProfileData, Tweets)
+
+@app.route('/wordfrequency')
+def word_frequency():
+    return analyze_word_frequency(db, Tweets)
+
+@app.route('/test')
+def test():
+    return get_all_languages(db, Tweets)
+
+@app.route('/abusivewords')
+def abusivewords():
+    return analyze_abusive_language(db, Tweets)
+
+
 if __name__ == '__main__':
     if os.environ.get('PORT') is not None:
         #scheduler.start()
