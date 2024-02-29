@@ -7,7 +7,8 @@ import pandas as pd
 import subprocess
 from features.schedular_db_push import collect_data_job
 from features.trends import get_trends
-from features.word_freq import analyze_word_frequency, analyze_abusive_language, get_all_languages
+from features.word_freq import analyze_word_frequency, analyze_abusive_language, get_all_languages, analyze_sentiments_in_languages
+from features.dataset_info import get_db_details
 
 app = Flask(__name__)
 scheduler = APScheduler()
@@ -43,6 +44,33 @@ class Tweets(db.Model):
     tweet = db.Column(db.String(2000))
     language = db.Column(db.String(255))
     tweet_time = db.Column(db.String(255))
+class Wordfrequency(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    country = db.Column(db.String)
+    country_word = db.Column(db.String)
+    country_frequency = db.Column(db.Integer)
+    trend = db.Column(db.String)
+    trend_word = db.Column(db.String)
+    trend_frequency = db.Column(db.Integer)
+class Abusivewords(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    language = db.Column(db.String)
+    words = db.Column(db.String)
+    frequency = db.Column(db.Integer)
+class Sentimentwords(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    language = db.Column(db.String)
+    positive_frequency = db.Column(db.Integer)
+    negative_frequency = db.Column(db.Integer)
+class Trendsanalysis(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    language = db.Column(db.String)
+    languages_top_trend = db.Column(db.String)
+    countries  = db.Column(db.String)
+    countries_top_trend = db.Column(db.String)
+    userLocations  = db.Column(db.String)
+    userLocations_top_trend = db.Column(db.String)
+
 
 #scheduling the job
 def job():
@@ -120,6 +148,9 @@ def home():
     return """<h1>Distant Reading Archive</h1>
     <p>A prototype API for distant reading of science fiction novels</p>
     """
+@app.route('/test')
+def test():
+    return get_all_languages(db, Tweets)
 
 @app.route('/trends', methods=['GET'])
 def trends():
@@ -127,20 +158,30 @@ def trends():
 
 @app.route('/wordfrequency')
 def word_frequency():
-    return analyze_word_frequency(db, Tweets)
-
-@app.route('/test')
-def test():
-    return get_all_languages(db, Tweets)
+    return analyze_word_frequency(db, Tweets, Wordfrequency)
 
 @app.route('/abusivewords')
 def abusivewords():
     return analyze_abusive_language(db, Tweets)
 
+@app.route('/sentiments')
+def sentiments():
+    return analyze_sentiments_in_languages(db, Tweets)
+
+@app.route('/dataset_info')
+def dataset_info():
+    get_db_details(db, ProfileData, Tweets)
+    #get_trend_regions_details(db, Tweets)
+    #get_tweet_languages_details(db, Tweets)
+    return """<h1>Distant Reading Archive</h1>
+    <p>A prototype API for distant reading of science fiction novels</p>
+    """
+
 
 if __name__ == '__main__':
     if os.environ.get('PORT') is not None:
         #scheduler.start()
+        db.create_all()
         app.run(debug=True, host='0.0.0.0', port=os.environ.get('PORT'))
     else:
         #scheduler.start()

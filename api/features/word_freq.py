@@ -1,50 +1,63 @@
 from collections import Counter
-from flask import jsonify
-import nltk
+from flask import jsonify 
+from sqlalchemy import func
+import pandas as pd
 import os
 import csv
 
-def analyze_word_frequency(db, Tweets):
+language_mapping = {
+    "en": "english", "fa": "persian", "ur": "urdu", "ar": "arabic", 
+    "tr": "turkish", "iw": "hebrew","es": "spanish",
+    "in": "indonesian", "zh": "chinese", "ne": "nepali", "hi": "hindi", 
+    "ru": "russian", "bn": "bengali"
+}
+
+def load_custom_stopwords(language_mapping):
+    stopwords_list = []
+    basedir = os.path.abspath(os.getcwd())
+    basedir = basedir + "\\api\\features\\stopwords\\"
     
-    # Download the NLTK stopwords corpus
-    nltk.download('stopwords')
+    for code, lang in language_mapping.items():
+        path = os.path.join(basedir, f"{lang}")
+        with open(path, "r", encoding="utf-8") as file:
+            stopwords_list.extend([line.strip() for line in file])
+    
+    return stopwords_list
 
-    # Calculate word frequency for all trends and countries after removing stopwords
-    all_trend_word_counts = Counter()
-    all_country_word_counts = Counter()
+def analyze_word_frequency(db, Tweets, WordFrequency):
+    stopwords = load_custom_stopwords(language_mapping)
 
-    trend_tweets = db.session.query(Tweets.tweet, Tweets.trend).all()
-    country_tweets = db.session.query(Tweets.tweet, Tweets.country).all()
+    countries = db.session.query(Tweets.country).all()
+    trends = db.session.query(Tweets.trend).all()
 
-    english_stopwords = set(nltk.corpus.stopwords.words('english'))
-    arabic_stopwords = set(nltk.corpus.stopwords.words('arabic'))
+    country_word_counts = {}
+    
+    for country, in countries:
+        tweets = db.session.query(Tweets.tweet).filter(Tweets.country == country).limit(100).all()
+        tweets_df = pd.DataFrame(tweets, columns=['tweet'])
+        tweets_df['words'] = tweets_df['tweet'].str.lower().str.split()
+        tweets_df['words'] = tweets_df['words'].apply(lambda x: [word for word in x if word.lower() not in stopwords])
+        country_word_counts[country] = Counter([word for sublist in tweets_df['words'] for word in sublist])
 
-    for tweet, trend in trend_tweets:
-        words = [word.lower() for word in tweet.split() if word.lower() not in english_stopwords]
-        all_trend_word_counts += Counter(words)
+    trend_word_counts = {}
 
-    for tweet, country in country_tweets:
-        lang = country.lower()
-        if lang == 'en':
-            stopwords = english_stopwords
-        elif lang == 'ar':
-            stopwords = arabic_stopwords
-        else:
-            stopwords = set()  # Use empty set for other languages
-        words = [word.lower() for word in tweet.split() if word.lower() not in stopwords]
-        all_country_word_counts += Counter(words)
+    for trend, in trends:
+        tweets = db.session.query(Tweets.tweet).filter(Tweets.trend == trend).limit(100).all()
+        tweets_df = pd.DataFrame(tweets, columns=['tweet'])
+        tweets_df['words'] = tweets_df['tweet'].str.lower().str.split()
+        tweets_df['words'] = tweets_df['words'].apply(lambda x: [word for word in x if word.lower() not in stopwords])
+        trend_word_counts[trend] = Counter([word for sublist in tweets_df['words'] for word in sublist])
 
-    return jsonify({'all_trend_word_counts': all_trend_word_counts, 'all_country_word_counts': all_country_word_counts})
+    return jsonify({'country_word_counts': country_word_counts, 'trend_word_counts': trend_word_counts})
 
 
 def get_all_languages(db, Tweets):
     languages = [
-        "en", "de", "fa", "ur", "ar", "ckb", "it", "tr", "und", "ps", "qme", "iw", "ro", "fr", "es", "tl", "qht",
-        "et", "fi", "ca", "in", "zh", "ne", "hi", "nl", "te", "ta", "kn", "hu", "ja", "pt", "gu", "qct", "is",
-        "dv", "vi", "lv", "ht", "da", "th", "ko", "pl", "mr", "si", "sl", "sv", "no", "sd", "cs", "ru", "lt", "bn",
-        "eu", "or", "qam", "qst", "my", "ml"
-    ]
-
+    "en", "de", "fa", "ur", "ar", "ckb", "it", "tr", "und", "ps", "qme", "iw", "ro", "fr", "es", "tl", "qht",
+    "et", "fi", "ca", "in", "zh", "ne", "hi", "nl", "te", "ta", "kn", "hu", "ja", "pt", "gu", "qct", "is",
+    "dv", "vi", "lv", "ht", "da", "th", "ko", "pl", "mr", "si", "sl", "sv", "no", "sd", "cs", "ru", "lt", "bn",
+    "eu", "or", "qam", "qst", "my", "ml"
+]
     tweets_by_language = {lang: None for lang in languages}
 
     for language in languages:
@@ -78,7 +91,6 @@ def load_abusive_words(language):
     basedir = os.path.abspath(os.getcwd())
     basedir = basedir + "\\api\\features\\abusive\\"
     path = os.path.join(basedir, f"{full_language_name}.csv")
-    print(path)
     with open(path, "r", encoding="utf-8") as file:
         reader = csv.reader(file)
         return [row[0] for row in reader]
@@ -94,7 +106,7 @@ def analyze_abusive_language(db, Tweets):
     for language in languages:
         abusive_words = load_abusive_words(language)
         # Assuming Tweets has 'tweet' and 'language' columns
-        tweets = db.session.query(Tweets.tweet).filter(Tweets.language == language).all()
+        tweets = db.session.query(Tweets.tweet).filter(Tweets.language == language).limit(100).all()
         for tweet in tweets:
             if tweet.tweet is not None and isinstance(tweet.tweet, str):
                 for word in tweet.tweet.split():
@@ -102,3 +114,35 @@ def analyze_abusive_language(db, Tweets):
                         abusive_word_counts[language][word] = abusive_word_counts[language].get(word, 0) + 1
 
     return jsonify({'abusive_word_counts': abusive_word_counts})
+
+
+def load_sentiment_words(language, Categ):
+    basedir = os.path.abspath(os.getcwd())
+    basedir = basedir + "\\api\\features\\post_negat_words\\"
+    path = os.path.join(basedir, f"{language}{Categ}.csv")
+    with open(path, "r", encoding="utf-8") as file:
+        reader = csv.reader(file)
+        return [row[0] for row in reader]
+    
+def analyze_sentiments_in_languages(db, Tweets):
+    languages = [
+        "ar", "en", "iw", "hi", "ms", "fa", "ur"
+    ]
+
+    # Initialize dictionaries to store abusive word counts per language
+    sentiment_counts = {lang: {"positive": 0, "negative": 0} for lang in languages}
+
+    for language in languages:
+        positive_words = load_sentiment_words(language, "_positive")
+        negative_words = load_sentiment_words(language, "_negative")
+        # Assuming Tweets has 'tweet' and 'language' columns
+        tweets = db.session.query(Tweets.tweet).filter(Tweets.language == language).limit(100).all()
+        for tweet in tweets:
+            if tweet.tweet is not None and isinstance(tweet.tweet, str):
+                for word in tweet.tweet.split():
+                    if word in positive_words:
+                        sentiment_counts[language]["positive"] += 1
+                    elif word in negative_words:
+                        sentiment_counts[language]["negative"] += 1
+
+    return jsonify({'sentiment_counts': sentiment_counts})
