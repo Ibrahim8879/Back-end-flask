@@ -1,11 +1,13 @@
 # Back-end-flask
 # flask-sqlite
 cd Back-end-flask
-# or
+# Db
+Create db Foler and put db from whatsapp in it named as twitter.db
+# Create Environment
 python -m venv venv
-# or
+# Activate Environment
 .\venv\Scripts\activate
-# or
+# To Install Dependences
 pip install -r ./api/requirements.txt
 # To run
 python ./api/app.py
