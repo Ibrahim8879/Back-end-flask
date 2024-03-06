@@ -9,6 +9,8 @@ from features.schedular_db_push import collect_data_job
 from features.trends import get_trends
 from features.word_freq import analyze_word_frequency, analyze_abusive_language, get_all_languages, analyze_sentiments_in_languages
 from features.dataset_info import get_db_details
+from features.lexical import analyze_lexical_analysis
+
 
 app = Flask(__name__)
 scheduler = APScheduler()
@@ -167,6 +169,10 @@ def abusivewords():
 @app.route('/sentiments')
 def sentiments():
     return analyze_sentiments_in_languages(db, Tweets)
+
+@app.route('/lexical')
+def lexical():
+    return analyze_lexical_analysis(db, Tweets, ProfileData)
 
 @app.route('/dataset_info')
 def dataset_info():
