@@ -1,18 +1,21 @@
 from flask import Flask, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_apscheduler import APScheduler
+from flask_cors import CORS
 import os
 import csv
 import pandas as pd
 import subprocess
 from features.schedular_db_push import collect_data_job
 from features.trends import get_trends
-from features.word_freq import analyze_word_frequency, analyze_abusive_language, get_all_languages, analyze_sentiments_in_languages
+from features.word_freq import analyze_word_frequency, analyze_abusive_language, analyze_influence_in_languages,analyze_sentiments_in_languages
 from features.dataset_info import get_db_details
 from features.lexical import analyze_lexical_analysis
+from features.testing import testing_case
 
 
 app = Flask(__name__)
+CORS(app, origins=['http://localhost:3000'])
 scheduler = APScheduler()
 scheduler.init_app(app)
 # Database
@@ -32,10 +35,10 @@ class ProfileData(db.Model):
     birth_date = db.Column(db.String(255))
     description = db.Column(db.String(500))
     location = db.Column(db.String(255))
-    followers = db.Column(db.String(50))
-    following = db.Column(db.String(50))
+    followers = db.Column(db.Integer)
+    following = db.Column(db.Integer)
     verified = db.Column(db.String(50))
-    num_posts = db.Column(db.String(50))
+    num_posts = db.Column(db.Integer)
     date_joined = db.Column(db.String(255))
 class Tweets(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -72,8 +75,35 @@ class Trendsanalysis(db.Model):
     countries_top_trend = db.Column(db.String)
     userLocations  = db.Column(db.String)
     userLocations_top_trend = db.Column(db.String)
+class Influenceanalysis(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(255))
+    score = db.Column(db.Float)
+    standardized_score = db.Column(db.Float)
+class Trends(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    language = db.Column(db.String(255))
+    language_top_trends = db.Column(db.String(255))
+    language_top_trends_count = db.Column(db.Integer)
+    country = db.Column(db.String(255))
+    country_top_trends = db.Column(db.String(255))
+    country_top_trends_count = db.Column(db.Integer)
+    location = db.Column(db.String(255))
+    location_top_trends = db.Column(db.String(255))
+    location_top_trends_count = db.Column(db.Integer)
 
 
+
+def convert_to_int(value):
+    value = value.replace(',', '')  # Remove commas
+    if value.isdigit():
+        return int(value)
+    elif value.endswith('K'):
+        return int(float(value[:-1]) * 1000)
+    elif value.endswith('M'):
+        return int(float(value[:-1]) * 1000000)
+    else:
+        return value
 #scheduling the job
 def job():
     with app.app_context():
@@ -113,14 +143,15 @@ def job():
                             birth_date=row['Birth Date'],
                             description=row['Description'],
                             location=row['Location'],
-                            followers=row['Followers'],
-                            following=row['Following'],
+                            followers=convert_to_int(row['Followers']),
+                            following=convert_to_int(row['Following']),
                             verified=row['Verified'],
-                            num_posts=row['Number of Posts'],
+                            num_posts=convert_to_int(row['Number of Posts']),
                             date_joined=row['Date Joined']
                         )
                         db.session.add(profile_data)
-                db.session.commit()
+
+                    db.session.commit()
                 print("Data pushed to database.")
             else:
                 print("File Not Updated. So, dont update db.")
@@ -137,6 +168,12 @@ def job():
         clean_file(file_path2)
         print("Files are also cleaned.")
 
+        #Now updating all analysis tables
+        analyze_sentiments_in_languages(db, Tweets, Sentimentwords)
+        analyze_abusive_language(db, Tweets, Abusivewords)
+        analyze_influence_in_languages(db, ProfileData, Influenceanalysis)
+        get_trends(db, ProfileData, Tweets, Trends)
+
 # Schedule the job to run every 12 hours
 scheduler.add_job(id='collect_data_job', func=job, trigger='interval', seconds=15)
 # Error handlers
@@ -147,32 +184,114 @@ def page_not_found(error):
 # Routes
 @app.route('/', methods=['GET'])
 def home():
+    db.create_all()
     return """<h1>Distant Reading Archive</h1>
     <p>A prototype API for distant reading of science fiction novels</p>
     """
 @app.route('/test')
 def test():
-    return get_all_languages(db, Tweets)
+    return testing_case(db, Tweets)
 
 @app.route('/trends', methods=['GET'])
-def trends():
-    return get_trends(db, ProfileData, Tweets)
+def get_trends():
+    # Retrieve data from the Trends table
+    trends_data = Trends.query.all()
+
+    # Process and format the data
+    data = {
+        'countries': [],
+        'locations': [],
+        'languages': []
+    }
+
+    for trend in trends_data:
+        if trend.country:
+            country_obj = next((obj for obj in data['countries'] if obj['name'] == trend.country), None)
+            if country_obj is None:
+                country_obj = {'name': trend.country, 'top_trends': []}
+                data['countries'].append(country_obj)
+            if trend.country_top_trends:
+                country_obj['top_trends'].append({'trend': trend.country_top_trends, 'count': trend.country_top_trends_count})
+
+        if trend.location:
+            location_obj = next((obj for obj in data['locations'] if obj['name'] == trend.location), None)
+            if location_obj is None:
+                location_obj = {'name': trend.location, 'top_trends': []}
+                data['locations'].append(location_obj)
+            if trend.location_top_trends:
+                location_obj['top_trends'].append({'trend': trend.location_top_trends, 'count': trend.location_top_trends_count})
+
+        if trend.language:
+            language_obj = next((obj for obj in data['languages'] if obj['name'] == trend.language), None)
+            if language_obj is None:
+                language_obj = {'name': trend.language, 'top_trends': []}
+                data['languages'].append(language_obj)
+            if trend.language_top_trends:
+                language_obj['top_trends'].append({'trend': trend.language_top_trends, 'count': trend.language_top_trends_count})
+
+    return jsonify(data)
 
 @app.route('/wordfrequency')
 def word_frequency():
     return analyze_word_frequency(db, Tweets, Wordfrequency)
 
+
 @app.route('/abusivewords')
 def abusivewords():
-    return analyze_abusive_language(db, Tweets)
+    # Query to get all rows from Abusivewords table
+    abusive_words = Abusivewords.query.all()
+
+    # Structure the data as language, total count, and all words
+    structured_data = {}
+    for word in abusive_words:
+        if word.language not in structured_data:
+            structured_data[word.language] = {
+                'total_count': 0,
+                'all_words': []
+            }
+        structured_data[word.language]['total_count'] += word.frequency
+        structured_data[word.language]['all_words'].append(word.words)
+
+    # Convert the structured data to the desired format
+    result = []
+    for language, data in structured_data.items():
+        result.append({
+            'language': language,
+            'total_count': data['total_count'],
+            'all_words': data['all_words']
+        })
+
+    # Return the result as JSON
+    return jsonify(result)
+
 
 @app.route('/sentiments')
 def sentiments():
-    return analyze_sentiments_in_languages(db, Tweets)
+    sentiment_data = Sentimentwords.query.all()
+    formatted_data = [
+        {
+            "language": data.language,
+            "positive_frequency": data.positive_frequency,
+            "negative_frequency": data.negative_frequency
+        }
+        for data in sentiment_data
+    ]
+    return jsonify(formatted_data)
+    
 
-@app.route('/lexical')
-def lexical():
-    return analyze_lexical_analysis(db, Tweets, ProfileData)
+@app.route('/influence')
+def influence():
+    analyze_influence_in_languages(db, ProfileData, Influenceanalysis)
+    data = Influenceanalysis.query.limit(50).all()
+    influence_data = []
+    for entry in data:
+        influence_data.append({
+            'username': entry.username,
+            'score': entry.score,
+            'standardized_score': entry.standardized_score
+        })
+    return jsonify(influence_data)
+
 
 @app.route('/dataset_info')
 def dataset_info():
@@ -183,11 +302,14 @@ def dataset_info():
     <p>A prototype API for distant reading of science fiction novels</p>
     """
 
+@app.route('/lexical')
+def lexical():
+    return analyze_lexical_analysis(db, Tweets, ProfileData)
+
 
 if __name__ == '__main__':
     if os.environ.get('PORT') is not None:
         #scheduler.start()
-        db.create_all()
         app.run(debug=True, host='0.0.0.0', port=os.environ.get('PORT'))
     else:
         #scheduler.start()
