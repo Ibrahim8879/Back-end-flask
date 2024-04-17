@@ -3,7 +3,37 @@ from sqlalchemy import func
 import pandas as pd
 import os
 import csv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+import re
 
-def analyze_lexical_analysis(db, Tweets, ProfileData):
-    return """<h1> Is File mae Lexical analysis karna ha</h1>
-        """
+def count_unique_words(tweet):
+    words = re.findall(r'\b\w+\b', tweet.lower())
+    unique_words = set(words)     # Convert the list of words to a set to get unique words
+    return len(unique_words)
+
+def analyze_lexical_analysis(db, Tweets, Lexical):
+    # Query the database to fetch tweets and their languages
+    tweets = db.session.query(Tweets.tweet, Tweets.language).all()
+
+    # Convert the query result to a DataFrame
+    df = pd.DataFrame(tweets, columns=['tweet', 'language'])
+
+    # Compute the count of unique words in each tweet
+    df['uniqueWordsCount'] = df['tweet'].apply(count_unique_words)
+
+    # Compute the diversity for each tweet
+    diversity = [uniqueWords / len(singleTweet) if len(singleTweet)>0 else 0 for singleTweet, uniqueWords in zip(df.tweet, df.uniqueWordsCount)]
+    df['diversity'] = diversity
+    
+    # Group the DataFrame by 'language' and calculate the mean of 'diversity' within each group
+    mean_diversity_by_language = df.groupby('language')['diversity'].mean()
+
+    for language, avg_diversity in mean_diversity_by_language.items():
+            new_lexical_entry = Lexical(language=language, diversity=round(avg_diversity*100))
+            print(language,round(avg_diversity*100))
+            db.session.add(new_lexical_entry)
+    db.session.commit()
+
+    return jsonify({'message': 'Lexical Diversity updated successfully'})
+

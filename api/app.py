@@ -8,7 +8,8 @@ import pandas as pd
 import subprocess
 from features.schedular_db_push import collect_data_job
 from features.trends import get_trends
-from features.word_freq import analyze_word_frequency, analyze_abusive_language, analyze_influence_in_languages,analyze_sentiments_in_languages
+from features.word_freq import analyze_word_frequency, analyze_abusive_language,analyze_sentiments_in_languages
+from features.influence import analyze_influence_in_languages
 from features.dataset_info import get_db_details
 from features.lexical import analyze_lexical_analysis
 from features.testing import testing_case
@@ -49,6 +50,7 @@ class Tweets(db.Model):
     tweet = db.Column(db.String(2000))
     language = db.Column(db.String(255))
     tweet_time = db.Column(db.String(255))
+
 class Wordfrequency(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     country = db.Column(db.String)
@@ -57,6 +59,7 @@ class Wordfrequency(db.Model):
     trend = db.Column(db.String)
     trend_word = db.Column(db.String)
     trend_frequency = db.Column(db.Integer)
+
 class Abusivewords(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     language = db.Column(db.String)
@@ -67,6 +70,21 @@ class Sentimentwords(db.Model):
     language = db.Column(db.String)
     positive_frequency = db.Column(db.Integer)
     negative_frequency = db.Column(db.Integer)
+    neutral_frequency = db.Column(db.Integer)
+class Lexical(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    language = db.Column(db.String)
+    diversity = db.Column(db.Integer)
+class InfluenceAnalysis(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(255))
+    followers = db.Column(db.Integer)
+    location = db.Column(db.String(255))
+    languages = db.Column(db.String(255))
+    regions = db.Column(db.String(255))
+    hashtags = db.Column(db.String(255))
+
+
 class Trendsanalysis(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     language = db.Column(db.String)
@@ -75,11 +93,6 @@ class Trendsanalysis(db.Model):
     countries_top_trend = db.Column(db.String)
     userLocations  = db.Column(db.String)
     userLocations_top_trend = db.Column(db.String)
-class Influenceanalysis(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(255))
-    score = db.Column(db.Float)
-    standardized_score = db.Column(db.Float)
 class Trends(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     language = db.Column(db.String(255))
@@ -93,7 +106,7 @@ class Trends(db.Model):
     location_top_trends_count = db.Column(db.Integer)
 
 
-
+#scheduling the job
 def convert_to_int(value):
     value = value.replace(',', '')  # Remove commas
     if value.isdigit():
@@ -104,7 +117,6 @@ def convert_to_int(value):
         return int(float(value[:-1]) * 1000000)
     else:
         return value
-#scheduling the job
 def job():
     with app.app_context():
         # Scrapper Running here.
@@ -171,11 +183,15 @@ def job():
         #Now updating all analysis tables
         analyze_sentiments_in_languages(db, Tweets, Sentimentwords)
         analyze_abusive_language(db, Tweets, Abusivewords)
-        analyze_influence_in_languages(db, ProfileData, Influenceanalysis)
+        analyze_lexical_analysis(db, Tweets, Lexical)
+        analyze_influence_in_languages(db, ProfileData, Tweets, InfluenceAnalysis)
+
+
         get_trends(db, ProfileData, Tweets, Trends)
+        
 
 # Schedule the job to run every 12 hours
-scheduler.add_job(id='collect_data_job', func=job, trigger='interval', seconds=15)
+#scheduler.add_job(id='collect_data_job', func=job, trigger='interval', seconds=15)
 # Error handlers
 @app.errorhandler(404)
 def page_not_found(error):
@@ -188,10 +204,8 @@ def home():
     return """<h1>Distant Reading Archive</h1>
     <p>A prototype API for distant reading of science fiction novels</p>
     """
-@app.route('/test')
-def test():
-    return testing_case(db, Tweets)
 
+#working
 @app.route('/trends', methods=['GET'])
 def get_trends():
     # Retrieve data from the Trends table
@@ -229,13 +243,14 @@ def get_trends():
             if trend.language_top_trends:
                 language_obj['top_trends'].append({'trend': trend.language_top_trends, 'count': trend.language_top_trends_count})
 
-    return jsonify(data)
+    return jsonify(data['countries'])
 
+#Areeb working
 @app.route('/wordfrequency')
 def word_frequency():
     return analyze_word_frequency(db, Tweets, Wordfrequency)
 
-
+#Done
 @app.route('/abusivewords')
 def abusivewords():
     # Query to get all rows from Abusivewords table
@@ -257,14 +272,14 @@ def abusivewords():
     for language, data in structured_data.items():
         result.append({
             'language': language,
-            'total_count': data['total_count'],
+            'total_count': round(data['total_count']*100,2),
             'all_words': data['all_words']
         })
 
     # Return the result as JSON
     return jsonify(result)
 
-
+#Done
 @app.route('/sentiments')
 def sentiments():
     sentiment_data = Sentimentwords.query.all()
@@ -272,26 +287,50 @@ def sentiments():
         {
             "language": data.language,
             "positive_frequency": data.positive_frequency,
-            "negative_frequency": data.negative_frequency
+            "negative_frequency": data.negative_frequency,
+            "neutral_frequency": data.neutral_frequency
         }
         for data in sentiment_data
     ]
     return jsonify(formatted_data)
-    
 
+#Done   
+@app.route('/lexical')
+def lexical():
+    lexical_data = Lexical.query.all()
+    # Convert the SQLAlchemy objects to dictionaries
+    data = []
+    for item in lexical_data:
+        data.append({
+            'language': item.language,
+            'diversity': item.diversity
+        })
+    return jsonify(data)
+
+#Done almost
 @app.route('/influence')
 def influence():
-    analyze_influence_in_languages(db, ProfileData, Influenceanalysis)
-    data = Influenceanalysis.query.limit(50).all()
-    influence_data = []
-    for entry in data:
-        influence_data.append({
-            'username': entry.username,
-            'score': entry.score,
-            'standardized_score': entry.standardized_score
-        })
-    return jsonify(influence_data)
+    try:
+        # Fetch all data from InfluenceAnalysis table
+        influence_data = InfluenceAnalysis.query.all()
 
+        # Convert data to list of dictionaries
+        data = []
+        for entry in influence_data:
+            data.append({
+                'id': entry.id,
+                'username': entry.username,
+                'followers': entry.followers,
+                'location': entry.location,
+                'languages': entry.languages.split(','),  # Convert comma-separated string to list
+                'regions': entry.regions.split(','),  # Convert comma-separated string to list
+                'hashtags': entry.hashtags.split(',')  # Convert comma-separated string to list
+            })
+
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
 
 @app.route('/dataset_info')
 def dataset_info():
@@ -302,10 +341,9 @@ def dataset_info():
     <p>A prototype API for distant reading of science fiction novels</p>
     """
 
-@app.route('/lexical')
-def lexical():
-    return analyze_lexical_analysis(db, Tweets, ProfileData)
-
+@app.route('/test')
+def test():
+    return testing_case(db, Tweets)
 
 if __name__ == '__main__':
     if os.environ.get('PORT') is not None:
