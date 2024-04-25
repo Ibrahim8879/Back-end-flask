@@ -5,50 +5,50 @@ import pandas as pd
 import os
 import csv
 
-language_mapping = {
-    "en": "english", "fa": "persian", "ur": "urdu", "ar": "arabic", 
-    "tr": "turkish", "iw": "hebrew","es": "spanish",
-    "in": "indonesian", "zh": "chinese", "ne": "nepali", "hi": "hindi", 
-    "ru": "russian", "bn": "bengali"
-}
+#language_mapping = {
+#    "en": "english", "fa": "persian", "ur": "urdu", "ar": "arabic", 
+#    "tr": "turkish", "iw": "hebrew","es": "spanish",
+#    "in": "indonesian", "zh": "chinese", "ne": "nepali", "hi": "hindi", 
+#    "ru": "russian", "bn": "bengali"
+#}
 
-def load_custom_stopwords(language_mapping):
-    stopwords_list = []
-    basedir = os.path.abspath(os.getcwd())
-    basedir = basedir + "\\api\\features\\stopwords\\"
-    
-    for code, lang in language_mapping.items():
-        path = os.path.join(basedir, f"{lang}")
-        with open(path, "r", encoding="utf-8") as file:
-            stopwords_list.extend([line.strip() for line in file])
-    
-    return stopwords_list
+#def load_custom_stopwords(language_mapping):
+#    stopwords_list = []
+#    basedir = os.path.abspath(os.getcwd())
+#    basedir = basedir + "\\api\\features\\stopwords\\"
+#    
+#    for code, lang in language_mapping.items():
+#        path = os.path.join(basedir, f"{lang}")
+#        with open(path, "r", encoding="utf-8") as file:
+#            stopwords_list.extend([line.strip() for line in file])
+#   
+#    return stopwords_list
 
-def analyze_word_frequency(db, Tweets, WordFrequency):
-    stopwords = load_custom_stopwords(language_mapping)
-
-    countries = db.session.query(Tweets.country).all()
-    trends = db.session.query(Tweets.trend).all()
-
-    country_word_counts = {}
-    
-    for country, in countries:
-        tweets = db.session.query(Tweets.tweet).filter(Tweets.country == country).limit(100).all()
-        tweets_df = pd.DataFrame(tweets, columns=['tweet'])
-        tweets_df['words'] = tweets_df['tweet'].str.lower().str.split()
-        tweets_df['words'] = tweets_df['words'].apply(lambda x: [word for word in x if word.lower() not in stopwords])
-        country_word_counts[country] = Counter([word for sublist in tweets_df['words'] for word in sublist])
-
-    trend_word_counts = {}
-
-    for trend, in trends:
-        tweets = db.session.query(Tweets.tweet).filter(Tweets.trend == trend).limit(100).all()
-        tweets_df = pd.DataFrame(tweets, columns=['tweet'])
-        tweets_df['words'] = tweets_df['tweet'].str.lower().str.split()
-        tweets_df['words'] = tweets_df['words'].apply(lambda x: [word for word in x if word.lower() not in stopwords])
-        trend_word_counts[trend] = Counter([word for sublist in tweets_df['words'] for word in sublist])
-
-    return jsonify({'country_word_counts': country_word_counts, 'trend_word_counts': trend_word_counts})
+#def analyze_word_frequency(db, Tweets, WordFrequency):
+#    stopwords = load_custom_stopwords(language_mapping)
+#
+#    countries = db.session.query(Tweets.country).all()
+#    trends = db.session.query(Tweets.trend).all()
+#
+#    country_word_counts = {}
+#    
+#    for country, in countries:
+#        tweets = db.session.query(Tweets.tweet).filter(Tweets.country == country).limit(100).all()
+#        tweets_df = pd.DataFrame(tweets, columns=['tweet'])
+#        tweets_df['words'] = tweets_df['tweet'].str.lower().str.split()
+#        tweets_df['words'] = tweets_df['words'].apply(lambda x: [word for word in x if word.lower() not in stopwords])
+#        country_word_counts[country] = Counter([word for sublist in tweets_df['words'] for word in sublist])
+#
+#    trend_word_counts = {}
+#
+#    for trend, in trends:
+#        tweets = db.session.query(Tweets.tweet).filter(Tweets.trend == trend).limit(100).all()
+#        tweets_df = pd.DataFrame(tweets, columns=['tweet'])
+#        tweets_df['words'] = tweets_df['tweet'].str.lower().str.split()
+#        tweets_df['words'] = tweets_df['words'].apply(lambda x: [word for word in x if word.lower() not in stopwords])
+#        trend_word_counts[trend] = Counter([word for sublist in tweets_df['words'] for word in sublist])
+#
+#    return jsonify({'country_word_counts': country_word_counts, 'trend_word_counts': trend_word_counts})
 
 def load_abusive_words(language):
     language_mapping = {
@@ -153,3 +153,23 @@ def analyze_sentiments_in_languages(db, Tweets, Sentimentwords):
 
     return jsonify({'message': 'Sentiment counts updated successfully'})
 
+def count_words_in_csv(db, Abusivewords_dictcount):
+    basedir = os.path.abspath(os.getcwd())
+    basedir = basedir + "\\api\\features\\abusive\\"
+    abusive_folder_path = basedir
+    for filename in os.listdir(abusive_folder_path):
+        if filename.endswith('.csv'):
+            language_tag = os.path.splitext(filename)[0]
+            word_count = 0
+            with open(os.path.join(abusive_folder_path, filename), 'r', encoding='utf-8') as file:
+                csv_reader = csv.reader(file)
+                for row in csv_reader:
+                    word_count += len(row)
+            # Check if the language tag already exists in the database
+            language_count = Abusivewords_dictcount.query.filter_by(language_tag=language_tag).first()
+            if language_count:
+                language_count.word_count = word_count
+            else:
+                new_language_count = Abusivewords_dictcount(language_tag=language_tag, word_count=word_count)
+                db.session.add(new_language_count)
+    db.session.commit()

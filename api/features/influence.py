@@ -16,7 +16,7 @@ def analyze_influence_in_languages(db, ProfileData, Tweets, InfluenceAnalysis):
         # Process each user and store data in InfluenceAnalysis table
         for user in users:
             username = user.username
-            followers = user.followers
+            followers = user.followers if user.followers else 0  # Set followers to 0 if it's None
             location = user.location
 
             # Check if the user entry already exists in InfluenceAnalysis table

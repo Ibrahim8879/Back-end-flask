@@ -1,79 +1,68 @@
 from flask import jsonify
 from collections import Counter
-from itertools import groupby
-from collections import defaultdict
 
-def get_trends(db, ProfileData, Tweets, Trends):
-    # Get trending topics by language
+def get_top_trends(data):
+    trends_count = Counter(data)
+    top_trends = trends_count.most_common(10)  # Get the top 10 trends
+    return top_trends
+
+def get_language_trends(db, Tweets):
     language_trends = db.session.query(Tweets.trend, Tweets.language).all()
+    unique_languages = set(language for trend, language in language_trends)
+    top_language_trends = {}
+    for language in unique_languages:
+        language_trends_filtered = [trend for trend, lang in language_trends if lang == language]
+        top_trends = get_top_trends(language_trends_filtered)
+        top_language_trends[language] = top_trends
+    return top_language_trends
+
+def get_country_trends(db, Tweets):
     country_trends = db.session.query(Tweets.trend, Tweets.country).all()
-    user_location_trends = db.session.query(Tweets.trend, ProfileData.location)\
-        .join(ProfileData, Tweets.username == ProfileData.username).all()
+    unique_countries = set(country for trend, country in country_trends)
+    top_country_trends = {}
+    for country in unique_countries:
+        country_trends_filtered = [trend for trend, c in country_trends if c == country]
+        top_trends = get_top_trends(country_trends_filtered)
+        top_country_trends[country] = top_trends
+    return top_country_trends
+
+def get_user_location_trends(db, ProfileData, Tweets):
+    user_location_trends = db.session.query(Tweets.trend, ProfileData.location) \
+        .join(ProfileData, Tweets.username == ProfileData.username).limit(1000).all()
+    unique_locations = set(location for trend, location in user_location_trends)
+    top_location_trends = {}
+    for location in unique_locations:
+        location_trends_filtered = [trend for trend, loc in user_location_trends if loc == location]
+        top_trends = get_top_trends(location_trends_filtered)
+        top_location_trends[location] = top_trends
+    return top_location_trends
+
     
-    # Initialize dictionaries to store trends for each category
-    language_dict = defaultdict(set)
-    country_dict = defaultdict(set)
-    user_location_dict = defaultdict(set)
-
-    # Group trends by language, country, and user location, and count occurrences
-    for trend, language in language_trends:
-        language_dict[language].add(trend)
-
-    for trend, country in country_trends:
-        country_dict[country].add(trend)
-
-    for trend, user_location in user_location_trends:
-        user_location_dict[user_location].add(trend)
-
-    # Convert sets to lists and add count
-    def get_trend_count(trend_set, all_trends):
-        trend_count = defaultdict(int)
-        for trend in trend_set:
-            trend_count[trend] = all_trends.count(trend)
-        return [{"trend": k, "count": v} for k, v in trend_count.items()]
-
-    language_results = [{"language": k, "top_trends": get_trend_count(language_dict[k], [trend for lang_set in language_dict.values() for trend in lang_set])} for k in language_dict]
-    country_results = [{"country": k, "top_trends": get_trend_count(country_dict[k], [trend for country_set in country_dict.values() for trend in country_set])} for k in country_dict]
-    user_location_results = [{"user_location": k, "top_trends": get_trend_count(user_location_dict[k], [trend for loc_set in user_location_dict.values() for trend in loc_set])} for k in user_location_dict]
-
-    for country_data in country_results:
-        country = country_data["country"]
-        for trend_data in country_data["top_trends"]:
-            trend = trend_data["trend"]
-            count = trend_data["count"]
-            trend_entry = Trends(
-                country=country,
-                country_top_trends=trend,
-                country_top_trends_count=count
-            )
-            db.session.add(trend_entry)
-
-    for language_data in language_results:
-        language = language_data["language"]
-        for trend_data in language_data["top_trends"]:
-            trend = trend_data["trend"]
-            count = trend_data["count"]
-            trend_entry = Trends(
-                language=language,
-                language_top_trends=trend,
-                language_top_trends_count=count
-            )
-            db.session.add(trend_entry)
-
-    for location_data in user_location_results:
-        location = location_data["user_location"]
-        for trend_data in location_data["top_trends"]:
-            trend = trend_data["trend"]
-            count = trend_data["count"]
-            trend_entry = Trends(
-                location=location,
-                location_top_trends=trend,
-                location_top_trends_count=count
-            )
-            db.session.add(trend_entry)
-
-    # Commit the changes to the database
+def get_trends(db, ProfileData, Tweets, Trendsanalysis):
+    # Usage
+    language_trends = get_language_trends(db, Tweets)
+    country_trends = get_country_trends(db, Tweets)
+    user_location_trends = get_user_location_trends(db, ProfileData, Tweets)
+    
+    for language, top_trends in language_trends.items():
+        for trend, count in top_trends:
+            language_entry = Trendsanalysis(language=language, languages_top_trend=trend,
+                                             languages_top_trend_count=count)
+            db.session.add(language_entry)
+    
+    for country, top_trends in country_trends.items():
+        for trend, count in top_trends:
+            country_entry = Trendsanalysis(countries=country, countries_top_trend=trend,
+                                           countries_top_trend_count=count)
+            db.session.add(country_entry)
+    
+    for location, top_trends in user_location_trends.items():
+        for trend, count in top_trends:
+            location_entry = Trendsanalysis(userLocations=location, userLocations_top_trend=trend,
+                                            userLocations_top_trend_count=count)
+            db.session.add(location_entry)
+    
     db.session.commit()
 
     # Return the results as JSON
-    return jsonify({'message': 'Trends have been updated'})
+    return jsonify({'message': 'Trends analysis data added to the database'})

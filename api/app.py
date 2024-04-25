@@ -1,14 +1,15 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_apscheduler import APScheduler
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 import os
 import csv
 import pandas as pd
 import subprocess
 from features.schedular_db_push import collect_data_job
 from features.trends import get_trends
-from features.word_freq import analyze_word_frequency, analyze_abusive_language,analyze_sentiments_in_languages
+from features.word_freq import count_words_in_csv, analyze_abusive_language,analyze_sentiments_in_languages
+from features.wordFrequency import analyze_word_frequency
 from features.influence import analyze_influence_in_languages
 from features.dataset_info import get_db_details
 from features.lexical import analyze_lexical_analysis
@@ -16,7 +17,8 @@ from features.testing import testing_case
 
 
 app = Flask(__name__)
-CORS(app, origins=['http://localhost:3000'])
+CORS(app, resources={r"http://localhost:3000/wordusageext1": {"origins": 'http://localhost:3000/'}})
+app.config['CORS_HEADERS'] = 'Content-Type'
 scheduler = APScheduler()
 scheduler.init_app(app)
 # Database
@@ -50,21 +52,15 @@ class Tweets(db.Model):
     tweet = db.Column(db.String(2000))
     language = db.Column(db.String(255))
     tweet_time = db.Column(db.String(255))
-
-class Wordfrequency(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    country = db.Column(db.String)
-    country_word = db.Column(db.String)
-    country_frequency = db.Column(db.Integer)
-    trend = db.Column(db.String)
-    trend_word = db.Column(db.String)
-    trend_frequency = db.Column(db.Integer)
-
 class Abusivewords(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     language = db.Column(db.String)
     words = db.Column(db.String)
     frequency = db.Column(db.Integer)
+class Abusivewords_dictcount(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    language_tag = db.Column(db.String(10), unique=True)
+    word_count = db.Column(db.Integer)
 class Sentimentwords(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     language = db.Column(db.String)
@@ -73,7 +69,8 @@ class Sentimentwords(db.Model):
     neutral_frequency = db.Column(db.Integer)
 class Lexical(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    language = db.Column(db.String)
+    language_tag = db.Column(db.String)
+    language_name = db.Column(db.String)
     diversity = db.Column(db.Integer)
 class InfluenceAnalysis(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -83,27 +80,25 @@ class InfluenceAnalysis(db.Model):
     languages = db.Column(db.String(255))
     regions = db.Column(db.String(255))
     hashtags = db.Column(db.String(255))
-
-
+class Wordfrequency(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    country = db.Column(db.String)
+    country_word = db.Column(db.String)
+    country_frequency = db.Column(db.Integer)
+    language = db.Column(db.String)
+    language_word = db.Column(db.String)
+    language_frequency = db.Column(db.Integer)
 class Trendsanalysis(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     language = db.Column(db.String)
     languages_top_trend = db.Column(db.String)
+    languages_top_trend_count = db.Column(db.Integer)
     countries  = db.Column(db.String)
     countries_top_trend = db.Column(db.String)
+    countries_top_trend_count = db.Column(db.Integer)
     userLocations  = db.Column(db.String)
     userLocations_top_trend = db.Column(db.String)
-class Trends(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    language = db.Column(db.String(255))
-    language_top_trends = db.Column(db.String(255))
-    language_top_trends_count = db.Column(db.Integer)
-    country = db.Column(db.String(255))
-    country_top_trends = db.Column(db.String(255))
-    country_top_trends_count = db.Column(db.Integer)
-    location = db.Column(db.String(255))
-    location_top_trends = db.Column(db.String(255))
-    location_top_trends_count = db.Column(db.Integer)
+    userLocations_top_trend_count = db.Column(db.Integer)    
 
 
 #scheduling the job
@@ -183,9 +178,10 @@ def job():
         #Now updating all analysis tables
         analyze_sentiments_in_languages(db, Tweets, Sentimentwords)
         analyze_abusive_language(db, Tweets, Abusivewords)
+        count_words_in_csv(db, Abusivewords_dictcount)
         analyze_lexical_analysis(db, Tweets, Lexical)
         analyze_influence_in_languages(db, ProfileData, Tweets, InfluenceAnalysis)
-
+        analyze_word_frequency(db, Tweets, Wordfrequency)
 
         get_trends(db, ProfileData, Tweets, Trends)
         
@@ -204,53 +200,37 @@ def home():
     return """<h1>Distant Reading Archive</h1>
     <p>A prototype API for distant reading of science fiction novels</p>
     """
+@app.route('/test')
+def test():
+    unique_countries = Wordfrequency.query.with_entities(Wordfrequency.language.distinct()).all()
+    countries_list = [language[0] for language in unique_countries]
+    return jsonify({'countries': countries_list})
 
 #working
 @app.route('/trends', methods=['GET'])
-def get_trends():
-    # Retrieve data from the Trends table
-    trends_data = Trends.query.all()
-
-    # Process and format the data
-    data = {
-        'countries': [],
-        'locations': [],
-        'languages': []
-    }
-
-    for trend in trends_data:
-        if trend.country:
-            country_obj = next((obj for obj in data['countries'] if obj['name'] == trend.country), None)
-            if country_obj is None:
-                country_obj = {'name': trend.country, 'top_trends': []}
-                data['countries'].append(country_obj)
-            if trend.country_top_trends:
-                country_obj['top_trends'].append({'trend': trend.country_top_trends, 'count': trend.country_top_trends_count})
-
-        if trend.location:
-            location_obj = next((obj for obj in data['locations'] if obj['name'] == trend.location), None)
-            if location_obj is None:
-                location_obj = {'name': trend.location, 'top_trends': []}
-                data['locations'].append(location_obj)
-            if trend.location_top_trends:
-                location_obj['top_trends'].append({'trend': trend.location_top_trends, 'count': trend.location_top_trends_count})
-
-        if trend.language:
-            language_obj = next((obj for obj in data['languages'] if obj['name'] == trend.language), None)
-            if language_obj is None:
-                language_obj = {'name': trend.language, 'top_trends': []}
-                data['languages'].append(language_obj)
-            if trend.language_top_trends:
-                language_obj['top_trends'].append({'trend': trend.language_top_trends, 'count': trend.language_top_trends_count})
-
-    return jsonify(data['countries'])
-
-#Areeb working
-@app.route('/wordfrequency')
-def word_frequency():
-    return analyze_word_frequency(db, Tweets, Wordfrequency)
+@cross_origin()
+def trends_analysis():
+    return get_trends(db, ProfileData, Tweets, Trendsanalysis)
 
 #Done
+@app.route('/wordfrequency')
+@cross_origin()
+def word_frequency():
+    country = request.args.get('country')
+    language = request.args.get('language')
+    if country:
+        word_frequencies = Wordfrequency.query.filter_by(country=country).all()
+        restructured_data = [{'text': item.country_word, 'value': item.country_frequency} for item in word_frequencies]
+    elif language:
+        word_frequencies = Wordfrequency.query.filter_by(language=language).all()
+        restructured_data = [{'text': item.language_word, 'value': item.language_frequency} for item in word_frequencies]
+    else:
+        # Handle case where neither country nor language is provided
+        return jsonify({'error': 'Please provide either a country or a language.'}), 400
+    
+    return jsonify(restructured_data)
+
+#Done, user location plots.
 @app.route('/abusivewords')
 def abusivewords():
     # Query to get all rows from Abusivewords table
@@ -278,6 +258,15 @@ def abusivewords():
 
     # Return the result as JSON
     return jsonify(result)
+@app.route('/abusivewords_dictcount')
+def abusive_words_dict_count():
+    abusive_words_dict_count = Abusivewords_dictcount.query.all()
+    # Structure the data from Abusivewords_dictcount
+    abusive_words_dict_count_data = {}
+    for entry in abusive_words_dict_count:
+        abusive_words_dict_count_data[entry.language_tag] = entry.word_count
+
+    return jsonify(abusive_words_dict_count_data)
 
 #Done
 @app.route('/sentiments')
@@ -294,7 +283,7 @@ def sentiments():
     ]
     return jsonify(formatted_data)
 
-#Done   
+#Done, user location plots.
 @app.route('/lexical')
 def lexical():
     lexical_data = Lexical.query.all()
@@ -302,12 +291,13 @@ def lexical():
     data = []
     for item in lexical_data:
         data.append({
-            'language': item.language,
+            'language_tag': item.language_tag,
+            'language_name': item.language_name,
             'diversity': item.diversity
         })
     return jsonify(data)
 
-#Done almost
+#Done
 @app.route('/influence')
 def influence():
     try:
@@ -330,8 +320,8 @@ def influence():
         return jsonify(data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-    
 
+#update need in fyp file.
 @app.route('/dataset_info')
 def dataset_info():
     get_db_details(db, ProfileData, Tweets)
@@ -341,9 +331,6 @@ def dataset_info():
     <p>A prototype API for distant reading of science fiction novels</p>
     """
 
-@app.route('/test')
-def test():
-    return testing_case(db, Tweets)
 
 if __name__ == '__main__':
     if os.environ.get('PORT') is not None:
