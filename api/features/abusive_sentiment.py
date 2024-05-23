@@ -5,51 +5,6 @@ import pandas as pd
 import os
 import csv
 
-#language_mapping = {
-#    "en": "english", "fa": "persian", "ur": "urdu", "ar": "arabic", 
-#    "tr": "turkish", "iw": "hebrew","es": "spanish",
-#    "in": "indonesian", "zh": "chinese", "ne": "nepali", "hi": "hindi", 
-#    "ru": "russian", "bn": "bengali"
-#}
-
-#def load_custom_stopwords(language_mapping):
-#    stopwords_list = []
-#    basedir = os.path.abspath(os.getcwd())
-#    basedir = basedir + "\\api\\features\\stopwords\\"
-#    
-#    for code, lang in language_mapping.items():
-#        path = os.path.join(basedir, f"{lang}")
-#        with open(path, "r", encoding="utf-8") as file:
-#            stopwords_list.extend([line.strip() for line in file])
-#   
-#    return stopwords_list
-
-#def analyze_word_frequency(db, Tweets, WordFrequency):
-#    stopwords = load_custom_stopwords(language_mapping)
-#
-#    countries = db.session.query(Tweets.country).all()
-#    trends = db.session.query(Tweets.trend).all()
-#
-#    country_word_counts = {}
-#    
-#    for country, in countries:
-#        tweets = db.session.query(Tweets.tweet).filter(Tweets.country == country).limit(100).all()
-#        tweets_df = pd.DataFrame(tweets, columns=['tweet'])
-#        tweets_df['words'] = tweets_df['tweet'].str.lower().str.split()
-#        tweets_df['words'] = tweets_df['words'].apply(lambda x: [word for word in x if word.lower() not in stopwords])
-#        country_word_counts[country] = Counter([word for sublist in tweets_df['words'] for word in sublist])
-#
-#    trend_word_counts = {}
-#
-#    for trend, in trends:
-#        tweets = db.session.query(Tweets.tweet).filter(Tweets.trend == trend).limit(100).all()
-#        tweets_df = pd.DataFrame(tweets, columns=['tweet'])
-#        tweets_df['words'] = tweets_df['tweet'].str.lower().str.split()
-#        tweets_df['words'] = tweets_df['words'].apply(lambda x: [word for word in x if word.lower() not in stopwords])
-#        trend_word_counts[trend] = Counter([word for sublist in tweets_df['words'] for word in sublist])
-#
-#    return jsonify({'country_word_counts': country_word_counts, 'trend_word_counts': trend_word_counts})
-
 def load_abusive_words(language):
     language_mapping = {
         "ar": "arabic",
@@ -75,9 +30,8 @@ def analyze_abusive_language(db, Tweets, Abusivewords):
         "ar", "en", "iw", "hi", "ms", "fa", "ur"
     ]
 
-    # Initialize dictionaries to store abusive word counts per language
-    abusive_word_counts = {lang: {} for lang in languages}
-    total_words_per_language = {lang: 0 for lang in languages}
+    # Initialize dictionary to store the count of abusive tweets per language
+    abusive_tweet_counts = {lang: {'count': 0, 'tweets': []} for lang in languages}
 
     for language in languages:
         abusive_words = load_abusive_words(language)
@@ -85,31 +39,28 @@ def analyze_abusive_language(db, Tweets, Abusivewords):
         tweets = db.session.query(Tweets.tweet).filter(Tweets.language == language).limit(1000).all()
         for tweet in tweets:
             if tweet.tweet is not None and isinstance(tweet.tweet, str):
-                total_words_per_language[language] += len(tweet.tweet.split())
-                for word in tweet.tweet.split():
-                    if word in abusive_words:
-                        abusive_word_counts[language][word] = abusive_word_counts[language].get(word, 0) + 1
+                # Check if any abusive word is present in the tweet
+                if any(word in tweet.tweet.split() for word in abusive_words):
+                    abusive_tweet_counts[language]['count'] += 1
+                    #abusive_tweet_counts[language]['tweets'].append(tweet.tweet)
 
-    for language, word_counts in abusive_word_counts.items():
-        total_words = total_words_per_language[language]
-        for word, count in word_counts.items():
-            # Calculate the percentage of abusive word occurrence
-            percentage = (count / total_words) * 100
-
-            # Check if the word already exists in the database
-            abusive_word = Abusivewords.query.filter_by(language=language, words=word).first()
-            if abusive_word:
-                # Update the percentage if the word already exists
-                abusive_word.frequency = percentage
-            else:
-                # Create a new entry for the word if it doesn't exist
-                new_abusive_word = Abusivewords(language=language, words=word, frequency=percentage)
-                db.session.add(new_abusive_word)
+    for language, info in abusive_tweet_counts.items():
+        # Check if the language already exists in the database
+        abusive_language = Abusivewords.query.filter_by(language=language).first()
+        if abusive_language:
+            # Update the count of abusive tweets if the language already exists
+            abusive_language.frequency = info['count']
+            abusive_language.abusive_tweets = info['tweets']
+        else:
+            # Create a new entry for the language if it doesn't exist
+            new_abusive_language = Abusivewords(language=language, frequency=info['count'])
+            db.session.add(new_abusive_language)
 
     # Commit the changes to the database
     db.session.commit()
 
-    return jsonify({'message': 'Abusive words percentages updated successfully'})
+    return jsonify({'message': abusive_tweet_counts})
+
 
 
 def load_sentiment_words(language, Categ):
@@ -137,14 +88,22 @@ def analyze_sentiments_in_languages(db, Tweets, Sentimentwords):
         
         for tweet in tweets:
             if tweet.tweet is not None and isinstance(tweet.tweet, str):
+                positive_score = 0
+                negative_score = 0
                 for word in tweet.tweet.split():
                     if word in positive_words:
-                        positive_count += 1
+                        positive_score += 1
                     elif word in negative_words:
-                        negative_count += 1
-                    else :
-                        neutral_count += 1
-
+                        negative_score += 1
+                
+                # Determine sentiment
+                if positive_score > negative_score:
+                    positive_count += 1
+                elif negative_score > positive_score:
+                    negative_count += 1
+                else:
+                    neutral_count += 1
+           
         # Update database
         sentiment_data = Sentimentwords(language=language, positive_frequency=positive_count,
                                 negative_frequency=negative_count, neutral_frequency=neutral_count)

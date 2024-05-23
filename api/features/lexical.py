@@ -1,10 +1,5 @@
 from flask import jsonify 
-from sqlalchemy import func
 import pandas as pd
-import os
-import csv
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 import re
 
 twitter_tags = {
@@ -73,7 +68,7 @@ def count_unique_words(tweet):
     unique_words = set(words)
     return len(unique_words)
 
-def analyze_lexical_analysis(db, Tweets, Lexical):
+def analyze_lexical_analysis_language(db, Tweets, Lexical_lang):
     # Query the database to fetch tweets and their languages
     tweets = db.session.query(Tweets.tweet, Tweets.language).all()
 
@@ -95,9 +90,38 @@ def analyze_lexical_analysis(db, Tweets, Lexical):
         language_name = twitter_tags.get(language, "Unknown")
 
         # Create a new entry in the Lexical table with language tag and full name
-        new_lexical_entry = Lexical(language_tag=language, language_name=language_name, diversity=int(round(avg_diversity * 100)))
+        new_lexical_entry = Lexical_lang(language_tag=language, language_name=language_name, diversity=int(round(avg_diversity * 100)))
         db.session.add(new_lexical_entry)
 
     db.session.commit()
 
+    return jsonify({'message': 'Lexical Diversity updated successfully'})
+
+def analyze_lexical_analysis_location(db, Tweets, Lexical_loca):
+    # Query the database to fetch tweets and their languages
+    tweets = db.session.query(Tweets.tweet, Tweets.country).all()
+
+    # Convert the query result to a DataFrame
+    df = pd.DataFrame(tweets, columns=['tweet', 'country'])
+
+    # Compute the count of unique words in each tweet
+    df['uniqueWordsCount'] = df['tweet'].apply(count_unique_words)
+
+    # Compute the diversity for each tweet
+    diversity = [uniqueWords / len(singleTweet) if len(singleTweet)>0 else 0 for singleTweet, uniqueWords in zip(df.tweet, df.uniqueWordsCount)]
+    df['diversity'] = diversity
+    
+    # Group the DataFrame by 'country' and calculate the mean of 'diversity' within each group
+    mean_diversity_by_language = df.groupby('country')['diversity'].mean()
+
+    for country, avg_diversity in mean_diversity_by_language.items():
+            new_lexical_entry = Lexical_loca(location_tag=country, location_name=country, diversity=round(avg_diversity*100))
+            db.session.add(new_lexical_entry)
+    db.session.commit()
+
+    return jsonify({'message': 'Lexical Diversity updated successfully'})
+
+def analyze_lexical_analysis(db, Tweets, Lexical_lang, Lexical_loca):
+    analyze_lexical_analysis_language(db, Tweets, Lexical_lang)
+    analyze_lexical_analysis_location(db, Tweets, Lexical_loca)
     return jsonify({'message': 'Lexical Diversity updated successfully'})

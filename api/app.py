@@ -5,19 +5,21 @@ from flask_cors import CORS, cross_origin
 import os
 import csv
 import pandas as pd
+from datetime import datetime
+import urllib.parse
 import subprocess
-from features.schedular_db_push import collect_data_job
-from features.trends import get_trends
-from features.word_freq import count_words_in_csv, analyze_abusive_language,analyze_sentiments_in_languages
+from features.location_cleaning import Cleaning_locations
+from features.trends import get_trends, fetch_trends_data
+from features.abusive_sentiment import count_words_in_csv, analyze_abusive_language,analyze_sentiments_in_languages
 from features.wordFrequency import analyze_word_frequency
 from features.influence import analyze_influence_in_languages
 from features.dataset_info import get_db_details
 from features.lexical import analyze_lexical_analysis
-from features.testing import testing_case
-
+from features.openai import google_stance
 
 app = Flask(__name__)
-CORS(app, resources={r"http://localhost:3000/wordusageext1": {"origins": 'http://localhost:3000/'}})
+CORS(app, resources={r"http://localhost:3000/wordusageext1": {"origins": 'http://localhost:3000/'},
+                     r"http://localhost:3000/stance": {"origins": 'http://localhost:3000/'},})
 app.config['CORS_HEADERS'] = 'Content-Type'
 scheduler = APScheduler()
 scheduler.init_app(app)
@@ -55,7 +57,6 @@ class Tweets(db.Model):
 class Abusivewords(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     language = db.Column(db.String)
-    words = db.Column(db.String)
     frequency = db.Column(db.Integer)
 class Abusivewords_dictcount(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -67,11 +68,16 @@ class Sentimentwords(db.Model):
     positive_frequency = db.Column(db.Integer)
     negative_frequency = db.Column(db.Integer)
     neutral_frequency = db.Column(db.Integer)
-class Lexical(db.Model):
+class Lexical_lang(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     language_tag = db.Column(db.String)
     language_name = db.Column(db.String)
     diversity = db.Column(db.Integer)
+class Lexical_loca(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    location_tag = db.Column(db.String)
+    location_name = db.Column(db.String)
+    diversity = db.Column(db.Integer)    
 class InfluenceAnalysis(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(255))
@@ -190,27 +196,43 @@ def job():
 #scheduler.add_job(id='collect_data_job', func=job, trigger='interval', seconds=15)
 # Error handlers
 @app.errorhandler(404)
+@cross_origin()
 def page_not_found(error):
     return 'This page does not exist', 404
 
 # Routes
 @app.route('/', methods=['GET'])
+@cross_origin()
 def home():
     db.create_all()
     return """<h1>Distant Reading Archive</h1>
     <p>A prototype API for distant reading of science fiction novels</p>
     """
 @app.route('/test')
+@cross_origin()
 def test():
-    unique_countries = Wordfrequency.query.with_entities(Wordfrequency.language.distinct()).all()
-    countries_list = [language[0] for language in unique_countries]
-    return jsonify({'countries': countries_list})
+    return Cleaning_locations(db, ProfileData)
+    #return analyze_sentiments_in_languages(db, Tweets, Sentimentwords)
+    #return analyze_abusive_language(db, Tweets, Abusivewords)
+    #count_words_in_csv(db, Abusivewords_dictcount)
+    #return analyze_lexical_analysis(db, Tweets, Lexical_lang, Lexical_loca)
+    #analyze_influence_in_languages(db, ProfileData, Tweets, InfluenceAnalysis)
+    #return analyze_word_frequency(db, Tweets, Wordfrequency)
 
 #working
 @app.route('/trends', methods=['GET'])
 @cross_origin()
 def trends_analysis():
-    return get_trends(db, ProfileData, Tweets, Trendsanalysis)
+    return fetch_trends_data(db, Trendsanalysis)
+
+#Done, Getting Dates
+@app.route('/availabledates', methods=['GET'])
+@cross_origin()
+def available_dates():
+    available_dates = Tweets.query.with_entities(Tweets.date).distinct().all()
+    sorted_dates = sorted(available_dates)
+    starting_dates = [date[0] for date in sorted_dates]
+    return jsonify({'startingdate': starting_dates})
 
 #Done
 @app.route('/wordfrequency')
@@ -232,6 +254,7 @@ def word_frequency():
 
 #Done, user location plots.
 @app.route('/abusivewords')
+@cross_origin()
 def abusivewords():
     # Query to get all rows from Abusivewords table
     abusive_words = Abusivewords.query.all()
@@ -242,23 +265,21 @@ def abusivewords():
         if word.language not in structured_data:
             structured_data[word.language] = {
                 'total_count': 0,
-                'all_words': []
             }
         structured_data[word.language]['total_count'] += word.frequency
-        structured_data[word.language]['all_words'].append(word.words)
 
     # Convert the structured data to the desired format
     result = []
     for language, data in structured_data.items():
         result.append({
             'language': language,
-            'total_count': round(data['total_count']*100,2),
-            'all_words': data['all_words']
+            'total_count': round(data['total_count'],2),
         })
 
     # Return the result as JSON
     return jsonify(result)
 @app.route('/abusivewords_dictcount')
+@cross_origin()
 def abusive_words_dict_count():
     abusive_words_dict_count = Abusivewords_dictcount.query.all()
     # Structure the data from Abusivewords_dictcount
@@ -270,6 +291,7 @@ def abusive_words_dict_count():
 
 #Done
 @app.route('/sentiments')
+@cross_origin()
 def sentiments():
     sentiment_data = Sentimentwords.query.all()
     formatted_data = [
@@ -285,20 +307,31 @@ def sentiments():
 
 #Done, user location plots.
 @app.route('/lexical')
+@cross_origin()
 def lexical():
-    lexical_data = Lexical.query.all()
+    lexical_data = Lexical_lang.query.all()
+    lexical_data2 = Lexical_loca.query.all()
     # Convert the SQLAlchemy objects to dictionaries
     data = []
+    data2 = []
     for item in lexical_data:
         data.append({
             'language_tag': item.language_tag,
             'language_name': item.language_name,
             'diversity': item.diversity
         })
-    return jsonify(data)
+    for item in lexical_data2:
+        data2.append({
+            'location_tag': item.location_name,
+            'location_name': item.location_name,
+            'diversity': item.diversity
+        })
+    fdata = {'language': data, 'location': data2}
+    return jsonify(fdata)
 
 #Done
 @app.route('/influence')
+@cross_origin()
 def influence():
     try:
         # Fetch all data from InfluenceAnalysis table
@@ -323,6 +356,7 @@ def influence():
 
 #update need in fyp file.
 @app.route('/dataset_info')
+@cross_origin()
 def dataset_info():
     get_db_details(db, ProfileData, Tweets)
     #get_trend_regions_details(db, Tweets)
@@ -331,6 +365,12 @@ def dataset_info():
     <p>A prototype API for distant reading of science fiction novels</p>
     """
 
+@app.route('/openai')
+@cross_origin()
+def openai():
+    trend = request.args.get('trend')
+    decoded_string_python = urllib.parse.unquote(trend)
+    return google_stance(db, Tweets, decoded_string_python)
 
 if __name__ == '__main__':
     if os.environ.get('PORT') is not None:

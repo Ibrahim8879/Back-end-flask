@@ -1,0 +1,2 @@
+https://github.com/amirshnll/Persian-Swear-Words/blob/master/data.txt
+https://www.kaggle.com/datasets/amirshnll/persian-swear-words?resource=download

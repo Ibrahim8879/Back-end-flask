@@ -68,6 +68,8 @@ def countWordsGroupedByLanguage(grouped_tweets):
 
     return word_frequencies
 
+
+
 def countWordsGroupedByLocation(grouped_tweets):
     word_frequencies = {}
 
@@ -92,33 +94,53 @@ def countWordsGroupedByLocation(grouped_tweets):
 
     return word_frequencies
 
+
+
+
 #this function is supposed to count the occurance of each word grouped by the language.
 def analyze_word_frequency(db, Tweets, WordFrequency):
 
-    tweets = db.session.query(Tweets.tweet, Tweets.language, Tweets.country).all()
+    tweets = db.session.query(Tweets.tweet, Tweets.language, Tweets.country).limit(100).all()
     # Convert the query result to a DataFrame
     df = pd.DataFrame(tweets, columns=['tweet', 'language', 'country'])
     
 #grouped by language.   
     grouped_tweets = df.groupby('language')['tweet'].apply(' '.join).reset_index()
-    countbylanguage = countWordsGroupedByLanguage(grouped_tweets)
+    gt = countWordsGroupedByLanguage(grouped_tweets)
     
 #grouped by country.
-    #grouped_tweets = df.groupby(['country', 'language'])['tweet'].apply(' '.join).reset_index()
-    #countbylocation = countWordsGroupedByLocation(grouped_tweets)
+    # grouped_tweets = df.groupby(['country', 'language'])['tweet'].apply(' '.join).reset_index()
+    # gt = countWordsGroupedByLocation(grouped_tweets)
         
+    return jsonify(gt)
+   
+    
+#this function is supposed to count the occurance of each word grouped by the language.
+def analyze_word_frequency(db, Tweets, WordFrequency):
+
+    stopwords = load_custom_stopwords(language_mapping)
+    tweets = db.session.query(Tweets.tweet, Tweets.language, Tweets.country).all()
+    # Convert the query result to a DataFrame
+    df = pd.DataFrame(tweets, columns=['tweet', 'language', 'country'])
+    
+    grouped_tweets = df.groupby('country')['tweet'].apply(' '.join).reset_index()
+    countbylocation = countWordsGroupedByLocation(grouped_tweets)
+
+    grouped_tweets2 = df.groupby('language')['tweet'].apply(' '.join).reset_index()
+    countbylanguage = countWordsGroupedByLanguage(grouped_tweets2)
+
     # Push the word frequency data into the database
-    #for country, word_freq in countbylocation.items():
-    #    for word, frequency in word_freq.items():
-    #        word_frequency_entry = WordFrequency(
-    #            country=country,
-    #            country_word=word,
-    #            country_frequency=frequency,
-    #            language='',
-    #            language_word='',
-    #            language_frequency=0
-    #        )
-    #        db.session.add(word_frequency_entry)
+    for country, word_freq in countbylocation.items():
+        for word, frequency in word_freq.items():
+            word_frequency_entry = WordFrequency(
+                country=country,
+                country_word=word,
+                country_frequency=frequency,
+                language='',
+                language_word='',
+                language_frequency=0
+            )
+            db.session.add(word_frequency_entry)
 
     for language, word_freq in countbylanguage.items():
         for word, frequency in word_freq.items():
