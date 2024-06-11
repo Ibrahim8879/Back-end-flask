@@ -189,18 +189,11 @@ def job():
         print("Files are also cleaned.")
 
         #Now updating all analysis tables
-        analyze_sentiments_in_languages(db, Tweets, Sentimentwords)
-        analyze_abusive_language(db, Tweets, Abusivewords)
-        count_words_in_csv(db, Abusivewords_dictcount)
-        analyze_lexical_analysis(db, Tweets, Lexical)
-        analyze_influence_in_languages(db, ProfileData, Tweets, InfluenceAnalysis)
-        analyze_word_frequency(db, Tweets, Wordfrequency)
 
-        get_trends(db, ProfileData, Tweets, Trends)
-        
 
 # Schedule the job to run every 12 hours
 #scheduler.add_job(id='collect_data_job', func=job, trigger='interval', seconds=15)
+
 # Error handlers
 @app.errorhandler(404)
 @cross_origin()
@@ -233,20 +226,25 @@ def test():
         "2024-01-15",
         "2024-01-17"
     ]
-    #return Cleaning_locations(db, ProfileData)
-    #count_words_in_csv(db, Abusivewords_dictcount)
+    #done
+    #analyze_lexical_analysis(db, Tweets, Lexical_lang, Lexical_loca, date)
     #analyze_abusive_language(db, Tweets, Abusivewords, date)
-    #analyze_sentiments_in_languages(db, Tweets, Sentimentwords, date)
-    #analyze_influence_in_languages(db, ProfileData, Tweets, InfluenceAnalysis)
-    #get_trends(db, ProfileData, Tweets, Trendsanalysis, date)
-
-    #analyze_lexical_analysis(db, Tweets, Lexical_lang, Lexical_loca, date) location missing
+    #count_words_in_csv(db, Abusivewords_dictcount)
     
+    return analyze_influence_in_languages(db, ProfileData, Tweets, InfluenceAnalysis)
+
+
+
+    #return Cleaning_locations(db, ProfileData)
+    
+    
+    #
+    #analyze_word_frequency(db, Tweets, Wordfrequency, date)
+
     for date in dates:
         getdata = 0
-        getdata = analyze_word_frequency(db, Tweets, Wordfrequency, date)
+        getdata = analyze_sentiments_in_languages(db, Tweets, Sentimentwords, date)
     return """<h1>Distant Reading Archive</h1>"""
-    # analyze_word_frequency(db, Tweets, Wordfrequency, date)
 
 
 #working, with date

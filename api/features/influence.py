@@ -11,7 +11,7 @@ def analyze_influence_in_languages(db, ProfileData, Tweets, InfluenceAnalysis):
         # Fetch data from ProfileData and Tweets tables
         users = db.session.query(ProfileData.username, ProfileData.followers, ProfileData.location)\
             .outerjoin(Tweets, ProfileData.username == Tweets.username)\
-            .limit(1000).all()
+            .all()
 
         # Process each user and store data in InfluenceAnalysis table
         for user in users:

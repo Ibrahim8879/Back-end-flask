@@ -99,7 +99,7 @@ def analyze_lexical_analysis_language(db, Tweets, Lexical_lang, Date):
 
 def analyze_lexical_analysis_location(db, Tweets, Lexical_loca, Date):
     # Query the database to fetch tweets and their languages
-    tweets = db.session.query(Tweets.tweet, Tweets.country).filter(Tweets.date == Date).limit(100).all()
+    tweets = db.session.query(Tweets.tweet, Tweets.country).filter(Tweets.date == Date).all()
 
     # Convert the query result to a DataFrame
     df = pd.DataFrame(tweets, columns=['tweet', 'country'])

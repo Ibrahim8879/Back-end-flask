@@ -36,7 +36,7 @@ def analyze_abusive_language(db, Tweets, Abusivewords, Date):
     for language in languages:
         abusive_words = load_abusive_words(language)
         # Assuming Tweets has 'tweet' and 'language' columns
-        tweets = db.session.query(Tweets.tweet).filter(Tweets.language == language, Tweets.date == Date).limit(1000).all()
+        tweets = db.session.query(Tweets.tweet).filter(Tweets.language == language, Tweets.date == Date).all()
         for tweet in tweets:
             if tweet.tweet is not None and isinstance(tweet.tweet, str):
                 # Check if any abusive word is present in the tweet
@@ -71,7 +71,7 @@ def analyze_sentiments_in_languages(db, Tweets, Sentimentwords, Date):
     for language in languages:
         positive_words = load_sentiment_words(language, "_positive")
         negative_words = load_sentiment_words(language, "_negative")
-        tweets = db.session.query(Tweets.tweet).filter(Tweets.language == language, Tweets.date == Date).limit(1000).all()
+        tweets = db.session.query(Tweets.tweet).filter(Tweets.language == language, Tweets.date == Date).all()
         
         # Initialize counts
         positive_count = 0
