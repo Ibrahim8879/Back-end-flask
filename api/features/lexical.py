@@ -68,9 +68,9 @@ def count_unique_words(tweet):
     unique_words = set(words)
     return len(unique_words)
 
-def analyze_lexical_analysis_language(db, Tweets, Lexical_lang):
+def analyze_lexical_analysis_language(db, Tweets, Lexical_lang, Date):
     # Query the database to fetch tweets and their languages
-    tweets = db.session.query(Tweets.tweet, Tweets.language).all()
+    tweets = db.session.query(Tweets.tweet, Tweets.language).filter(Tweets.date == Date).all()
 
     # Convert the query result to a DataFrame
     df = pd.DataFrame(tweets, columns=['tweet', 'language'])
@@ -90,16 +90,16 @@ def analyze_lexical_analysis_language(db, Tweets, Lexical_lang):
         language_name = twitter_tags.get(language, "Unknown")
 
         # Create a new entry in the Lexical table with language tag and full name
-        new_lexical_entry = Lexical_lang(language_tag=language, language_name=language_name, diversity=int(round(avg_diversity * 100)))
+        new_lexical_entry = Lexical_lang(date=Date, language_tag=language, language_name=language_name, diversity=int(round(avg_diversity * 100)))
         db.session.add(new_lexical_entry)
 
     db.session.commit()
 
     return jsonify({'message': 'Lexical Diversity updated successfully'})
 
-def analyze_lexical_analysis_location(db, Tweets, Lexical_loca):
+def analyze_lexical_analysis_location(db, Tweets, Lexical_loca, Date):
     # Query the database to fetch tweets and their languages
-    tweets = db.session.query(Tweets.tweet, Tweets.country).all()
+    tweets = db.session.query(Tweets.tweet, Tweets.country).filter(Tweets.date == Date).limit(100).all()
 
     # Convert the query result to a DataFrame
     df = pd.DataFrame(tweets, columns=['tweet', 'country'])
@@ -115,13 +115,13 @@ def analyze_lexical_analysis_location(db, Tweets, Lexical_loca):
     mean_diversity_by_language = df.groupby('country')['diversity'].mean()
 
     for country, avg_diversity in mean_diversity_by_language.items():
-            new_lexical_entry = Lexical_loca(location_tag=country, location_name=country, diversity=round(avg_diversity*100))
+            new_lexical_entry = Lexical_loca(date=Date, location_tag=country, location_name=country, diversity=round(avg_diversity*100))
             db.session.add(new_lexical_entry)
     db.session.commit()
 
     return jsonify({'message': 'Lexical Diversity updated successfully'})
 
-def analyze_lexical_analysis(db, Tweets, Lexical_lang, Lexical_loca):
-    analyze_lexical_analysis_language(db, Tweets, Lexical_lang)
-    analyze_lexical_analysis_location(db, Tweets, Lexical_loca)
+def analyze_lexical_analysis(db, Tweets, Lexical_lang, Lexical_loca, Date):
+    analyze_lexical_analysis_language(db, Tweets, Lexical_lang, Date)
+    analyze_lexical_analysis_location(db, Tweets, Lexical_loca, Date)
     return jsonify({'message': 'Lexical Diversity updated successfully'})

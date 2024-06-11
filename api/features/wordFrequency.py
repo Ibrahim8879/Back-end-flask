@@ -93,9 +93,9 @@ def countWordsGroupedByLocation(grouped_tweets):
     return word_frequencies
 
 #this function is supposed to count the occurance of each word grouped by the language.
-def analyze_word_frequency(db, Tweets, WordFrequency):
+def analyze_word_frequency(db, Tweets, WordFrequency, Date):
 
-    tweets = db.session.query(Tweets.tweet, Tweets.language, Tweets.country).all()
+    tweets = db.session.query(Tweets.tweet, Tweets.language, Tweets.country).filter(Tweets.date == Date).limit(300).all()
     # Convert the query result to a DataFrame
     df = pd.DataFrame(tweets, columns=['tweet', 'language', 'country'])
     
@@ -111,6 +111,7 @@ def analyze_word_frequency(db, Tweets, WordFrequency):
     #for country, word_freq in countbylocation.items():
     #    for word, frequency in word_freq.items():
     #        word_frequency_entry = WordFrequency(
+    #            date=Date, 
     #            country=country,
     #            country_word=word,
     #            country_frequency=frequency,
@@ -123,6 +124,7 @@ def analyze_word_frequency(db, Tweets, WordFrequency):
     for language, word_freq in countbylanguage.items():
         for word, frequency in word_freq.items():
             word_frequency_entry = WordFrequency(
+                date=Date,
                 country='',
                 country_word='',
                 country_frequency=0,

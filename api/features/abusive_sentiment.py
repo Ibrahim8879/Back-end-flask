@@ -25,7 +25,7 @@ def load_abusive_words(language):
         reader = csv.reader(file)
         return [row[0] for row in reader]
 
-def analyze_abusive_language(db, Tweets, Abusivewords):
+def analyze_abusive_language(db, Tweets, Abusivewords, Date):
     languages = [
         "ar", "en", "iw", "hi", "ms", "fa", "ur"
     ]
@@ -36,7 +36,7 @@ def analyze_abusive_language(db, Tweets, Abusivewords):
     for language in languages:
         abusive_words = load_abusive_words(language)
         # Assuming Tweets has 'tweet' and 'language' columns
-        tweets = db.session.query(Tweets.tweet).filter(Tweets.language == language).limit(1000).all()
+        tweets = db.session.query(Tweets.tweet).filter(Tweets.language == language, Tweets.date == Date).limit(1000).all()
         for tweet in tweets:
             if tweet.tweet is not None and isinstance(tweet.tweet, str):
                 # Check if any abusive word is present in the tweet
@@ -45,15 +45,7 @@ def analyze_abusive_language(db, Tweets, Abusivewords):
                     #abusive_tweet_counts[language]['tweets'].append(tweet.tweet)
 
     for language, info in abusive_tweet_counts.items():
-        # Check if the language already exists in the database
-        abusive_language = Abusivewords.query.filter_by(language=language).first()
-        if abusive_language:
-            # Update the count of abusive tweets if the language already exists
-            abusive_language.frequency = info['count']
-            abusive_language.abusive_tweets = info['tweets']
-        else:
-            # Create a new entry for the language if it doesn't exist
-            new_abusive_language = Abusivewords(language=language, frequency=info['count'])
+            new_abusive_language = Abusivewords(date = Date, language=language, frequency=info['count'])
             db.session.add(new_abusive_language)
 
     # Commit the changes to the database
@@ -71,7 +63,7 @@ def load_sentiment_words(language, Categ):
         reader = csv.reader(file)
         return [row[0] for row in reader]
     
-def analyze_sentiments_in_languages(db, Tweets, Sentimentwords):
+def analyze_sentiments_in_languages(db, Tweets, Sentimentwords, Date):
     languages = [
         "ar", "en", "iw", "hi", "ms", "fa", "ur"
     ]
@@ -79,7 +71,7 @@ def analyze_sentiments_in_languages(db, Tweets, Sentimentwords):
     for language in languages:
         positive_words = load_sentiment_words(language, "_positive")
         negative_words = load_sentiment_words(language, "_negative")
-        tweets = db.session.query(Tweets.tweet).filter(Tweets.language == language).limit(1000).all()
+        tweets = db.session.query(Tweets.tweet).filter(Tweets.language == language, Tweets.date == Date).limit(1000).all()
         
         # Initialize counts
         positive_count = 0
@@ -105,7 +97,7 @@ def analyze_sentiments_in_languages(db, Tweets, Sentimentwords):
                     neutral_count += 1
            
         # Update database
-        sentiment_data = Sentimentwords(language=language, positive_frequency=positive_count,
+        sentiment_data = Sentimentwords(date=Date ,language=language, positive_frequency=positive_count,
                                 negative_frequency=negative_count, neutral_frequency=neutral_count)
         db.session.add(sentiment_data)
         db.session.commit()

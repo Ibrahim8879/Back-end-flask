@@ -6,6 +6,7 @@ import os
 import csv
 import pandas as pd
 from datetime import datetime
+from collections import defaultdict
 import urllib.parse
 import subprocess
 from features.location_cleaning import Cleaning_locations
@@ -56,6 +57,7 @@ class Tweets(db.Model):
     tweet_time = db.Column(db.String(255))
 class Abusivewords(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.String(255))
     language = db.Column(db.String)
     frequency = db.Column(db.Integer)
 class Abusivewords_dictcount(db.Model):
@@ -64,17 +66,20 @@ class Abusivewords_dictcount(db.Model):
     word_count = db.Column(db.Integer)
 class Sentimentwords(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.String(255))
     language = db.Column(db.String)
     positive_frequency = db.Column(db.Integer)
     negative_frequency = db.Column(db.Integer)
     neutral_frequency = db.Column(db.Integer)
 class Lexical_lang(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.String(255))
     language_tag = db.Column(db.String)
     language_name = db.Column(db.String)
     diversity = db.Column(db.Integer)
 class Lexical_loca(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.String(255))
     location_tag = db.Column(db.String)
     location_name = db.Column(db.String)
     diversity = db.Column(db.Integer)    
@@ -88,6 +93,7 @@ class InfluenceAnalysis(db.Model):
     hashtags = db.Column(db.String(255))
 class Wordfrequency(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.String)
     country = db.Column(db.String)
     country_word = db.Column(db.String)
     country_frequency = db.Column(db.Integer)
@@ -96,6 +102,7 @@ class Wordfrequency(db.Model):
     language_frequency = db.Column(db.Integer)
 class Trendsanalysis(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.String)
     language = db.Column(db.String)
     languages_top_trend = db.Column(db.String)
     languages_top_trend_count = db.Column(db.Integer)
@@ -211,19 +218,44 @@ def home():
 @app.route('/test')
 @cross_origin()
 def test():
-    return Cleaning_locations(db, ProfileData)
-    #return analyze_sentiments_in_languages(db, Tweets, Sentimentwords)
-    #return analyze_abusive_language(db, Tweets, Abusivewords)
+    dates = [
+        "2023-11-14",
+        "2023-12-23",
+        "2023-12-26",
+        "2023-12-28",
+        "2023-12-29",
+        "2023-12-30",
+        "2024-01-01",
+        "2024-01-04",
+        "2024-01-05",
+        "2024-01-10",
+        "2024-01-12",
+        "2024-01-15",
+        "2024-01-17"
+    ]
+    #return Cleaning_locations(db, ProfileData)
     #count_words_in_csv(db, Abusivewords_dictcount)
-    #return analyze_lexical_analysis(db, Tweets, Lexical_lang, Lexical_loca)
+    #analyze_abusive_language(db, Tweets, Abusivewords, date)
+    #analyze_sentiments_in_languages(db, Tweets, Sentimentwords, date)
     #analyze_influence_in_languages(db, ProfileData, Tweets, InfluenceAnalysis)
-    #return analyze_word_frequency(db, Tweets, Wordfrequency)
+    #get_trends(db, ProfileData, Tweets, Trendsanalysis, date)
 
-#working
+    #analyze_lexical_analysis(db, Tweets, Lexical_lang, Lexical_loca, date) location missing
+    
+    for date in dates:
+        getdata = 0
+        getdata = analyze_word_frequency(db, Tweets, Wordfrequency, date)
+    return """<h1>Distant Reading Archive</h1>"""
+    # analyze_word_frequency(db, Tweets, Wordfrequency, date)
+
+
+#working, with date
 @app.route('/trends', methods=['GET'])
 @cross_origin()
 def trends_analysis():
-    return fetch_trends_data(db, Trendsanalysis)
+    startDate = request.args.get('startDate')
+    endDate = request.args.get('endDate') 
+    return fetch_trends_data(db, Trendsanalysis, startDate, endDate)
 
 #Done, Getting Dates
 @app.route('/availabledates', methods=['GET'])
@@ -238,26 +270,47 @@ def available_dates():
 @app.route('/wordfrequency')
 @cross_origin()
 def word_frequency():
+    startDate = request.args.get('startDate')
+    endDate = request.args.get('endDate')  
     country = request.args.get('country')
     language = request.args.get('language')
+
     if country:
-        word_frequencies = Wordfrequency.query.filter_by(country=country).all()
-        restructured_data = [{'text': item.country_word, 'value': item.country_frequency} for item in word_frequencies]
+        word_frequencies = Wordfrequency.query.filter_by(country=country).filter(Wordfrequency.date.between(startDate, endDate)).all()
+        frequency_dict = {}
+        for item in word_frequencies:
+            word = item.country_word
+            frequency = item.country_frequency or 0
+            if word in frequency_dict:
+                frequency_dict[word] += frequency
+            else:
+                frequency_dict[word] = frequency
     elif language:
-        word_frequencies = Wordfrequency.query.filter_by(language=language).all()
-        restructured_data = [{'text': item.language_word, 'value': item.language_frequency} for item in word_frequencies]
+        word_frequencies = Wordfrequency.query.filter_by(language=language).filter(Wordfrequency.date.between(startDate, endDate)).all()
+        frequency_dict = {}
+        for item in word_frequencies:
+            word = item.language_word
+            frequency = item.language_frequency or 0
+            if word in frequency_dict:
+                frequency_dict[word] += frequency
+            else:
+                frequency_dict[word] = frequency
     else:
         # Handle case where neither country nor language is provided
         return jsonify({'error': 'Please provide either a country or a language.'}), 400
     
+    restructured_data = [{'text': word, 'value': frequency} for word, frequency in frequency_dict.items()]
+
     return jsonify(restructured_data)
 
-#Done, user location plots.
+#Done, with date
 @app.route('/abusivewords')
 @cross_origin()
 def abusivewords():
+    startDate = request.args.get('startDate')
+    endDate = request.args.get('endDate')   
     # Query to get all rows from Abusivewords table
-    abusive_words = Abusivewords.query.all()
+    abusive_words = Abusivewords.query.filter(Abusivewords.date.between(startDate, endDate)).all()
 
     # Structure the data as language, total count, and all words
     structured_data = {}
@@ -289,11 +342,13 @@ def abusive_words_dict_count():
 
     return jsonify(abusive_words_dict_count_data)
 
-#Done
+#Done, with date
 @app.route('/sentiments')
 @cross_origin()
 def sentiments():
-    sentiment_data = Sentimentwords.query.all()
+    startDate = request.args.get('startDate')
+    endDate = request.args.get('endDate')   
+    sentiment_data = Sentimentwords.query.filter(Sentimentwords.date.between(startDate, endDate)).all()
     formatted_data = [
         {
             "language": data.language,
@@ -305,31 +360,53 @@ def sentiments():
     ]
     return jsonify(formatted_data)
 
-#Done, user location plots.
+#Done, with date, addition user locations filter
 @app.route('/lexical')
 @cross_origin()
 def lexical():
-    lexical_data = Lexical_lang.query.all()
-    lexical_data2 = Lexical_loca.query.all()
-    # Convert the SQLAlchemy objects to dictionaries
-    data = []
-    data2 = []
+    startDate = request.args.get('startDate')
+    endDate = request.args.get('endDate')   
+    lexical_data = Lexical_lang.query.filter(Lexical_lang.date.between(startDate, endDate)).all()
+    lexical_data2 = Lexical_loca.query.filter(Lexical_loca.date.between(startDate, endDate)).all()
+    
+    # Dictionaries to accumulate diversity values
+    language_dict = defaultdict(lambda: {'language_name': '', 'diversity': 0})
+    location_dict = defaultdict(lambda: {'location_name': '', 'diversity': 0})
+
+    # Process lexical_data
     for item in lexical_data:
-        data.append({
-            'language_tag': item.language_tag,
-            'language_name': item.language_name,
-            'diversity': item.diversity
-        })
+        tag = item.language_tag
+        name = item.language_name
+        diversity = item.diversity
+
+        if language_dict[tag]['language_name'] == '':
+            language_dict[tag]['language_name'] = name
+        language_dict[tag]['diversity'] += diversity
+
+    # Process lexical_data2
     for item in lexical_data2:
-        data2.append({
-            'location_tag': item.location_name,
-            'location_name': item.location_name,
-            'diversity': item.diversity
-        })
+        tag = item.location_name
+        name = item.location_name
+        diversity = item.diversity
+
+        if location_dict[tag]['location_name'] == '':
+            location_dict[tag]['location_name'] = name
+        location_dict[tag]['diversity'] += diversity
+
+    # Convert dictionaries to lists
+    data = [{'language_tag': tag, 'language_name': details['language_name'], 'diversity': details['diversity']}
+            for tag, details in language_dict.items()]
+
+    data2 = [{'location_tag': tag, 'location_name': details['location_name'], 'diversity': details['diversity']}
+            for tag, details in location_dict.items()]
+
+    # Prepare final data
     fdata = {'language': data, 'location': data2}
+
+    # Return JSON response
     return jsonify(fdata)
 
-#Done
+#Done, no need for date
 @app.route('/influence')
 @cross_origin()
 def influence():
